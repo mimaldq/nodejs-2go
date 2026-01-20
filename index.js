@@ -15,18 +15,20 @@ const AUTO_ACCESS = process.env.AUTO_ACCESS || false; // 是否自动访问项�
 const FILE_PATH = process.env.FILE_PATH || './tmp';   // 临时文件存储目录路径
 const SUB_PATH = process.env.SUB_PATH || 'sub';       // 订阅链接访问路径
 const PORT = process.env.SERVER_PORT || process.env.PORT || 3000; // 内部HTTP服务端口
-const ARGO_PORT = process.env.ARGO_PORT || 7860;      // 固定隧道端口
-const UUID = process.env.UUID || '3f33f14e-6a20-6d50-7f2b-87915bd2093a'; // Xray用户UUID，固定值
+const UUID = process.env.UUID || 'ae5e37d4-9d12-786b-0930-0bf293052238'; // Xray用户UUID
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';  // 哪吒监控服务器地址
 const NEZHA_PORT = process.env.NEZHA_PORT || '';      // 哪吒v0监控服务器端口
 const NEZHA_KEY = process.env.NEZHA_KEY || '';        // 哪吒监控客户端密钥
-const ARGO_DOMAIN = process.env.ARGO_DOMAIN || 'cftime.llng.de5.net';    // Cloudflare Argo隧道域名
-const ARGO_AUTH = process.env.ARGO_AUTH || '{"AccountTag":"5df51ef8a13b1d5d1a88ae015afa598b","TunnelSecret":"N1EzDh6/qIvsF1CB1nVq3Ud2S56HnMfbTfHQkp6wH9k=","TunnelID":"66e2951d-0287-41d7-b6b0-c5d6cbff04da","Endpoint":""}';        // Argo隧道认证信息
+const ARGO_DOMAIN = process.env.ARGO_DOMAIN || '';    // Cloudflare Argo隧道域名
+const ARGO_AUTH = process.env.ARGO_AUTH || '';        // Argo隧道认证信息
+const ARGO_PORT = process.env.ARGO_PORT || 7860;      // 固定隧道端口
 const CFIP = process.env.CFIP || 'cdns.doon.eu.org';  // CDN回源IP地址
 const CFPORT = process.env.CFPORT || 443;             // CDN回源端口
 const NAME = process.env.NAME || '';                  // 节点名称前缀
-const MONITOR_KEY = process.env.MONITOR_KEY || 'a88b11cbdd705529210ce58d6d96cd48033195da0efee3e45d119c2f210216f9'; // 监控脚本密钥
-const MONITOR_SERVER = process.env.MONITOR_SERVER || 'd3bkmf'; // 监控服务器标识
+
+// 监控环境变量（新增）
+const MONITOR_KEY = process.env.MONITOR_KEY || 'cd4223da888228d2f653298e0ba2138c5468213a6d3693fc14c81bc8c23565c5'; // 监控脚本密钥
+const MONITOR_SERVER = process.env.MONITOR_SERVER || 'e34x3e'; // 监控服务器标识
 const MONITOR_URL = process.env.MONITOR_URL || 'https://uptime-vps.bgxzg.indevs.in'; // 监控上报地址
 
 console.log(`使用的UUID: ${UUID}`);
@@ -41,7 +43,7 @@ if (MONITOR_KEY && MONITOR_SERVER && MONITOR_URL) {
 
 // 创建运行文件夹
 if (!fs.existsSync(FILE_PATH)) {
-  fs.mkdirSync(FILE_PATH, { recursive: true });
+  fs.mkdirSync(FILE_PATH);
   console.log(`${FILE_PATH} 已创建`);
 } else {
   console.log(`${FILE_PATH} 已存在`);
@@ -124,16 +126,21 @@ function deleteNodes() {
   }
 }
 
-// 清理历史文件
+// 清理历史文件（跳过监控脚本）
 function cleanupOldFiles() {
   try {
     const files = fs.readdirSync(FILE_PATH);
     files.forEach(file => {
+      // 跳过监控脚本文件
+      if (file === monitorName) {
+        console.log(`跳过删除监控脚本: ${file}`);
+        return;
+      }
+      
       const filePath = path.join(FILE_PATH, file);
       try {
         const stat = fs.statSync(filePath);
-        // 不删除监控脚本文件
-        if (stat.isFile() && file !== monitorName) {
+        if (stat.isFile()) {
           fs.unlinkSync(filePath);
         }
       } catch (err) {
@@ -160,6 +167,7 @@ async function generateConfig() {
     outbounds: [ { protocol: "freedom", tag: "direct" }, {protocol: "blackhole", tag: "block"} ]
   };
   fs.writeFileSync(path.join(FILE_PATH, 'config.json'), JSON.stringify(config, null, 2));
+  console.log('Xray配置文件生成完成');
 }
 
 // 判断系统架构
@@ -172,113 +180,118 @@ function getSystemArchitecture() {
   }
 }
 
-// 下载文件
-function downloadFile(fileName, fileUrl) {
-  return new Promise((resolve, reject) => {
-    const filePath = fileName; 
-    
-    // 确保目录存在
-    if (!fs.existsSync(FILE_PATH)) {
-      fs.mkdirSync(FILE_PATH, { recursive: true });
-    }
-    
-    const writer = fs.createWriteStream(filePath);
+// 下载对应系统架构的依赖文件
+function downloadFile(fileName, fileUrl, callback) {
+  const filePath = fileName; 
+  
+  // 确保目录存在
+  if (!fs.existsSync(FILE_PATH)) {
+    fs.mkdirSync(FILE_PATH, { recursive: true });
+  }
+  
+  const writer = fs.createWriteStream(filePath);
 
-    axios({
-      method: 'get',
-      url: fileUrl,
-      responseType: 'stream',
-    })
-      .then(response => {
-        response.data.pipe(writer);
+  axios({
+    method: 'get',
+    url: fileUrl,
+    responseType: 'stream',
+  })
+    .then(response => {
+      response.data.pipe(writer);
 
-        writer.on('finish', () => {
-          writer.close();
-          console.log(`下载 ${path.basename(filePath)} 成功`);
-          resolve(filePath);
-        });
+      writer.on('finish', () => {
+        writer.close();
+        console.log(`下载 ${path.basename(filePath)} 成功`);
+        callback(null, filePath);
+      });
 
-        writer.on('error', err => {
-          fs.unlink(filePath, () => { });
-          const errorMessage = `下载 ${path.basename(filePath)} 失败: ${err.message}`;
-          console.error(errorMessage);
-          reject(errorMessage);
-        });
-      })
-      .catch(err => {
+      writer.on('error', err => {
+        fs.unlink(filePath, () => { });
         const errorMessage = `下载 ${path.basename(filePath)} 失败: ${err.message}`;
         console.error(errorMessage);
-        reject(errorMessage);
+        callback(errorMessage);
       });
-  });
+    })
+    .catch(err => {
+      const errorMessage = `下载 ${path.basename(filePath)} 失败: ${err.message}`;
+      console.error(errorMessage);
+      callback(errorMessage);
+    });
 }
 
 // 下载并运行监控脚本
-async function downloadAndRunMonitorScript() {
+async function downloadAndRunMonitor() {
   // 检查监控配置是否完整
   if (!MONITOR_KEY || !MONITOR_SERVER || !MONITOR_URL) {
     console.log('监控环境变量不完整，跳过监控脚本启动');
     return;
   }
   
-  // 等待一段时间，确保其他服务已启动
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  
   console.log('开始下载并运行监控脚本...');
   
-  try {
+  // 检查监控脚本是否已经存在
+  const monitorExists = fs.existsSync(monitorPath);
+  
+  if (!monitorExists) {
     // 下载监控脚本
     const monitorURL = "https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh";
     console.log(`从 ${monitorURL} 下载监控脚本`);
     
-    await downloadFile(monitorPath, monitorURL);
-    
-    // 设置执行权限
-    fs.chmodSync(monitorPath, 0o755);
-    console.log('设置监控脚本执行权限成功');
-    
-    // 运行监控脚本
-    await runMonitorScript();
-    
-  } catch (error) {
-    console.error(`下载或运行监控脚本失败: ${error.message}`);
-    // 尝试直接执行命令
-    await runDirectMonitor();
+    try {
+      await new Promise((resolve, reject) => {
+        downloadFile(monitorPath, monitorURL, (err, filePath) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(filePath);
+          }
+        });
+      });
+      
+      // 设置执行权限
+      fs.chmodSync(monitorPath, 0o755);
+      console.log('设置监控脚本执行权限成功');
+    } catch (error) {
+      console.error(`下载监控脚本失败: ${error.message}`);
+      // 尝试使用wget直接下载
+      try {
+        await exec(`wget ${monitorURL} -O ${monitorPath}`);
+        fs.chmodSync(monitorPath, 0o755);
+        console.log('使用wget下载监控脚本成功');
+      } catch (wgetError) {
+        console.error(`使用wget下载监控脚本也失败: ${wgetError.message}`);
+        return;
+      }
+    }
+  } else {
+    console.log('监控脚本已存在，跳过下载');
   }
-}
-
-// 运行监控脚本
-async function runMonitorScript() {
-  const args = [
-    '-i',                    // 安装模式
-    '-k', MONITOR_KEY,       // 密钥
-    '-s', MONITOR_SERVER,    // 服务器标识
-    '-u', MONITOR_URL        // 上报地址
-  ];
   
-  console.log(`运行监控脚本: ${monitorPath} ${args.join(' ')}`);
-  
+  // 运行监控脚本
   try {
-    const command = `nohup ${monitorPath} ${args.join(' ')} >/dev/null 2>&1 &`;
+    console.log(`运行监控脚本: ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL}`);
+    const command = `nohup ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL} > ${FILE_PATH}/monitor.log 2>&1 &`;
     await exec(command);
     console.log('监控脚本启动成功');
+    
+    // 检查监控进程是否在运行
+    setTimeout(async () => {
+      try {
+        await exec(`pgrep -f "cf-vps-monitor" > /dev/null`);
+        console.log('监控进程正在运行');
+      } catch (error) {
+        console.log('监控进程可能未启动，尝试重启...');
+        // 尝试重新启动
+        try {
+          await exec(`nohup ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL} > ${FILE_PATH}/monitor.log 2>&1 &`);
+          console.log('监控脚本重新启动成功');
+        } catch (restartError) {
+          console.error(`重新启动监控脚本失败: ${restartError.message}`);
+        }
+      }
+    }, 3000);
   } catch (error) {
     console.error(`运行监控脚本失败: ${error.message}`);
-    throw error;
-  }
-}
-
-// 直接运行监控命令（备用方法）
-async function runDirectMonitor() {
-  console.log('尝试直接运行监控命令...');
-  
-  const command = `wget https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh -O ${monitorPath} && chmod +x ${monitorPath} && ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL}`;
-  
-  try {
-    await exec(command);
-    console.log('监控命令执行成功');
-  } catch (error) {
-    console.error(`直接运行监控命令失败: ${error.message}`);
   }
 }
 
@@ -292,41 +305,51 @@ async function downloadFilesAndRun() {
     return;
   }
 
+  const downloadPromises = filesToDownload.map(fileInfo => {
+    return new Promise((resolve, reject) => {
+      downloadFile(fileInfo.fileName, fileInfo.fileUrl, (err, filePath) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(filePath);
+        }
+      });
+    });
+  });
+
   try {
-    const downloadPromises = filesToDownload.map(fileInfo => 
-      downloadFile(fileInfo.fileName, fileInfo.fileUrl)
-    );
     await Promise.all(downloadPromises);
   } catch (err) {
     console.error('下载文件时出错:', err);
     return;
   }
-
-  // 授权文件
+  
+  // 授权和运行
   function authorizeFiles(filePaths) {
     const newPermissions = 0o775;
     filePaths.forEach(absoluteFilePath => {
       if (fs.existsSync(absoluteFilePath)) {
-        try {
-          fs.chmodSync(absoluteFilePath, newPermissions);
-          console.log(`授权成功 ${absoluteFilePath}: ${newPermissions.toString(8)}`);
-        } catch (err) {
-          console.error(`授权失败 ${absoluteFilePath}: ${err}`);
-        }
+        fs.chmod(absoluteFilePath, newPermissions, (err) => {
+          if (err) {
+            console.error(`授权失败 ${absoluteFilePath}: ${err}`);
+          } else {
+            console.log(`授权成功 ${absoluteFilePath}: ${newPermissions.toString(8)}`);
+          }
+        });
       }
     });
   }
-  
   const filesToAuthorize = NEZHA_PORT ? [npmPath, webPath, botPath] : [phpPath, webPath, botPath];
   authorizeFiles(filesToAuthorize);
 
-  // 运行ne-zha
+  //运行ne-zha
   if (NEZHA_SERVER && NEZHA_KEY) {
     if (!NEZHA_PORT) {
+      // 检测哪吒是否开启TLS
       const port = NEZHA_SERVER.includes(':') ? NEZHA_SERVER.split(':').pop() : '';
       const tlsPorts = new Set(['443', '8443', '2096', '2087', '2083', '2053']);
       const nezhatls = tlsPorts.has(port) ? 'true' : 'false';
-      
+      // 生成 config.yaml
       const configYaml = `
 client_secret: ${NEZHA_KEY}
 debug: false
@@ -350,6 +373,7 @@ uuid: ${UUID}`;
       
       fs.writeFileSync(nezhaConfigPath, configYaml);
       
+      // 运行 v1
       const command = `nohup ${phpPath} -c "${nezhaConfigPath}" >/dev/null 2>&1 &`;
       try {
         await exec(command);
@@ -376,8 +400,8 @@ uuid: ${UUID}`;
   } else {
     console.log('NEZHA变量为空，跳过运行');
   }
-
-  // 运行xr-ay
+  
+  //运行xr-ay
   const command1 = `nohup ${webPath} -c ${FILE_PATH}/config.json >/dev/null 2>&1 &`;
   try {
     await exec(command1);
@@ -393,8 +417,8 @@ uuid: ${UUID}`;
 
     if (ARGO_AUTH.match(/^[A-Z0-9a-z=]{120,250}$/)) {
       args = `tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token ${ARGO_AUTH}`;
-    } else if (ARGO_AUTH.includes('TunnelSecret')) {
-      // 确保 YAML 配置已生成
+    } else if (ARGO_AUTH.match(/TunnelSecret/)) {
+      // 确保隧道配置已生成
       if (!fs.existsSync(tunnelYamlPath)) {
         console.log('等待tunnel.yml配置...');
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -407,33 +431,16 @@ uuid: ${UUID}`;
     try {
       await exec(`nohup ${botPath} ${args} >/dev/null 2>&1 &`);
       console.log(`${botName} 运行中`);
-      
-      // 等待隧道启动
-      console.log('等待隧道启动...');
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      
-      // 检查隧道是否成功启动
-      if (ARGO_AUTH.includes('TunnelSecret')) {
-        // 对于固定隧道，检查进程是否在运行
-        try {
-          if (process.platform === 'win32') {
-            await exec(`tasklist | findstr ${botName} > nul`);
-          } else {
-            await exec(`pgrep -f "[${botName.charAt(0)}]${botName.substring(1)}" > /dev/null`);
-          }
-          console.log('隧道运行成功');
-        } catch (error) {
-          console.error('隧道启动失败');
-        }
-      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       console.error(`执行命令错误: ${error}`);
     }
   }
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 }
 
-// 根据系统架构返回对应的url
+//根据系统架构返回对应的url
 function getFilesForArchitecture(architecture) {
   let baseFiles;
   if (architecture === 'arm') {
@@ -486,8 +493,7 @@ function argoType() {
       
       fs.writeFileSync(tunnelJsonPath, ARGO_AUTH);
       
-      const tunnelYaml = `
-tunnel: ${tunnelId}
+      const tunnelYaml = `tunnel: ${tunnelId}
 credentials-file: ${tunnelJsonPath}
 protocol: http2
 
@@ -503,31 +509,33 @@ ingress:
       console.log('隧道YAML配置生成成功');
     } catch (error) {
       console.error('生成隧道配置错误:', error);
+      // 如果JSON解析失败，尝试使用原始方法
+      try {
+        fs.writeFileSync(tunnelJsonPath, ARGO_AUTH);
+        const tunnelIdMatch = ARGO_AUTH.match(/"TunnelID":"([^"]+)"/);
+        if (tunnelIdMatch) {
+          const tunnelId = tunnelIdMatch[1];
+          const tunnelYaml = `tunnel: ${tunnelId}
+credentials-file: ${tunnelJsonPath}
+protocol: http2
+
+ingress:
+  - hostname: ${ARGO_DOMAIN}
+    service: http://localhost:${ARGO_PORT}
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
+`;
+          fs.writeFileSync(tunnelYamlPath, tunnelYaml);
+          console.log('隧道YAML配置生成成功(备用方法)');
+        }
+      } catch (err) {
+        console.error('备用方法也失败');
+      }
     }
   } else {
     console.log("ARGO_AUTH 不是TunnelSecret格式，使用token连接隧道");
   }
-}
-
-// 获取isp信息
-async function getMetaInfo() {
-  try {
-    const response1 = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
-    if (response1.data && response1.data.country_code && response1.data.org) {
-      return `${response1.data.country_code}_${response1.data.org}`.replace(/ /g, '_');
-    }
-  } catch (error) {
-      try {
-        // 备用 ip-api.com 获取isp
-        const response2 = await axios.get('http://ip-api.com/json/', { timeout: 3000 });
-        if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
-          return `${response2.data.countryCode}_${response2.data.org}`.replace(/ /g, '_');
-        }
-      } catch (error) {
-        // console.error('备用API也失败');
-      }
-  }
-  return 'Unknown';
 }
 
 // 获取临时隧道domain
@@ -557,6 +565,7 @@ async function extractDomains() {
         await generateLinks(argoDomain);
       } else {
         console.log('未找到ArgoDomain，重新运行bot获取ArgoDomain');
+        // 删除 boot.log 文件，等待 2s 重新运行 server 以获取 ArgoDomain
         fs.unlinkSync(bootLogPath);
         async function killBotProcess() {
           try {
@@ -576,7 +585,7 @@ async function extractDomains() {
           await exec(`nohup ${botPath} ${args} >/dev/null 2>&1 &`);
           console.log(`${botName} 运行中`);
           await new Promise((resolve) => setTimeout(resolve, 3000));
-          await extractDomains();
+          await extractDomains(); // 重新提取域名
         } catch (error) {
           console.error(`执行命令错误: ${error}`);
         }
@@ -585,33 +594,55 @@ async function extractDomains() {
       console.error('读取boot.log错误:', error);
     }
   }
+}
 
-  async function generateLinks(argoDomain) {
-    // 获取ISP信息
-    const ISP = await getMetaInfo();
-    const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
+// 获取isp信息
+async function getMetaInfo() {
+  try {
+    const response1 = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
+    if (response1.data && response1.data.country_code && response1.data.org) {
+      return `${response1.data.country_code}_${response1.data.org}`.replace(/ /g, '_');
+    }
+  } catch (error) {
+      try {
+        // 备用 ip-api.com 获取isp
+        const response2 = await axios.get('http://ip-api.com/json/', { timeout: 3000 });
+        if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
+          return `${response2.data.countryCode}_${response2.data.org}`.replace(/ /g, '_');
+        }
+      } catch (error) {
+        // console.error('备用API也失败');
+      }
+  }
+  return 'Unknown';
+}
 
-    // 生成VMESS配置
-    const vmessConfig = {
-      v: '2',
-      ps: nodeName,
-      add: CFIP,
-      port: CFPORT,
-      id: UUID,
-      aid: '0',
-      scy: 'none',
-      net: 'ws',
-      type: 'none',
-      host: argoDomain,
-      path: '/vmess-argo?ed=2560',
-      tls: 'tls',
-      sni: argoDomain,
-      fp: 'firefox'
-    };
-    
-    const vmessBase64 = Buffer.from(JSON.stringify(vmessConfig)).toString('base64');
-    
-    const subTxt = `
+// 生成 list 和 sub 信息
+async function generateLinks(argoDomain) {
+  const ISP = await getMetaInfo();
+  const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
+  
+  // 生成VMESS配置
+  const vmessConfig = {
+    v: '2',
+    ps: nodeName,
+    add: CFIP,
+    port: CFPORT,
+    id: UUID,
+    aid: '0',
+    scy: 'none',
+    net: 'ws',
+    type: 'none',
+    host: argoDomain,
+    path: '/vmess-argo?ed=2560',
+    tls: 'tls',
+    sni: argoDomain,
+    fp: 'firefox'
+  };
+  
+  const vmessBase64 = Buffer.from(JSON.stringify(vmessConfig)).toString('base64');
+  
+  const subTxt = `
 vless://${UUID}@${CFIP}:${CFPORT}?encryption=none&security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Fvless-argo%3Fed%3D2560#${nodeName}
 
 vmess://${vmessBase64}
@@ -619,20 +650,17 @@ vmess://${vmessBase64}
 trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Ftrojan-argo%3Fed%3D2560#${nodeName}
     `;
     
-    console.log('订阅内容Base64:');
-    console.log(Buffer.from(subTxt).toString('base64'));
-    
-    // 保存订阅内容到全局变量
-    subscriptionContent = subTxt;
-    
-    fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
-    console.log(`${subPath} 保存成功`);
-    
-    // 上传节点
-    uploadNodes();
-    
-    return subTxt;
-  }
+  console.log('订阅内容Base64:');
+  console.log(Buffer.from(subTxt).toString('base64'));
+  
+  // 保存订阅内容到全局变量
+  subscriptionContent = subTxt;
+  
+  fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
+  console.log(`${subPath} 保存成功`);
+  uploadNodes();
+  
+  return subTxt;
 }
 
 // 自动上传节点或订阅
@@ -688,7 +716,7 @@ async function uploadNodes() {
   }
 }
 
-// 90s后删除相关文件（不删除监控脚本）
+// 90s后删除相关文件（跳过监控脚本）
 function cleanFiles() {
   setTimeout(() => {
     const filesToDelete = [
@@ -698,24 +726,30 @@ function cleanFiles() {
       botPath
     ];  
     
+    // 检查监控脚本是否存在，如果存在则不移除
+    if (fs.existsSync(monitorPath)) {
+      console.log('保留监控脚本文件');
+    }
+    
     if (NEZHA_PORT) {
       filesToDelete.push(npmPath);
     } else if (NEZHA_SERVER && NEZHA_KEY) {
       filesToDelete.push(phpPath);
     }
 
+    // Windows系统使用不同的删除命令
     if (process.platform === 'win32') {
       exec(`del /f /q ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} > nul 2>&1`, (error) => {
         console.clear();
         console.log('应用正在运行');
-        console.log('监控脚本已保留，继续运行');
+        console.log('监控脚本保持运行');
         console.log('感谢使用此脚本，享受吧！');
       });
     } else {
       exec(`rm -rf ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} >/dev/null 2>&1`, (error) => {
         console.clear();
         console.log('应用正在运行');
-        console.log('监控脚本已保留，继续运行');
+        console.log('监控脚本保持运行');
         console.log('感谢使用此脚本，享受吧！');
       });
     }
@@ -748,33 +782,29 @@ async function AddVisitTask() {
 // 主运行逻辑
 async function startserver() {
   try {
+    argoType();
     deleteNodes();
     cleanupOldFiles();
-    
-    argoType();
-    
     await generateConfig();
-    
     await downloadFilesAndRun();
-    
     await extractDomains();
     
-    // 启动监控脚本
-    await downloadAndRunMonitorScript();
+    // 启动监控脚本（在其他服务启动后）
+    setTimeout(async () => {
+      await downloadAndRunMonitor();
+    }, 10000); // 10秒后启动监控
     
     await AddVisitTask();
     
-    // 清理文件（不清理监控脚本）
+    // 清理文件（跳过监控脚本）
     cleanFiles();
-    
-    console.log('服务器初始化完成');
   } catch (error) {
     console.error('startserver错误:', error);
   }
 }
 
-app.listen(PORT, () => console.log(`http server is running on port:${PORT}!`));
-
 startserver().catch(error => {
-  console.error('Unhandled error in startserver:', error);
+  console.error('未处理的startserver错误:', error);
 });
+
+app.listen(PORT, () => console.log(`http服务运行在端口: ${PORT}`));

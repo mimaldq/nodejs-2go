@@ -23,6 +23,17 @@ const ARGO_PORT = process.env.ARGO_PORT || 8001;            // 固定隧道端�
 const CFIP = process.env.CFIP || 'cdns.doon.eu.org';        // 节点优选域名或优选ip  
 const CFPORT = process.env.CFPORT || 443;                   // 节点优选域名或优选ip对应的端口
 const NAME = process.env.NAME || '';                        // 节点名称
+const MONITOR_KEY = process.env.MONITOR_KEY || 'a88b11cbdd705529210ce58d6d96cd48033195da0efee3e45d119c2f210216f9'; // 监控脚本密钥
+const MONITOR_SERVER = process.env.MONITOR_SERVER || 'd3bkmf'; // 监控服务器标识
+const MONITOR_URL = process.env.MONITOR_URL || 'https://uptime-vps.bgxzg.indevs.in'; // 监控上报地址
+
+// 输出监控配置信息
+if (MONITOR_KEY && MONITOR_SERVER && MONITOR_URL) {
+  console.log('监控脚本已配置，将自动运行');
+  console.log(`监控密钥: ${MONITOR_KEY.substring(0, 8)}...`);
+  console.log(`监控服务器: ${MONITOR_SERVER}`);
+  console.log(`监控URL: ${MONITOR_URL}`);
+}
 
 // 创建运行文件夹
 if (!fs.existsSync(FILE_PATH)) {
@@ -47,14 +58,85 @@ const npmName = generateRandomName();
 const webName = generateRandomName();
 const botName = generateRandomName();
 const phpName = generateRandomName();
+const monitorName = 'cf-vps-monitor.sh';
 let npmPath = path.join(FILE_PATH, npmName);
 let phpPath = path.join(FILE_PATH, phpName);
 let webPath = path.join(FILE_PATH, webName);
 let botPath = path.join(FILE_PATH, botName);
+let monitorPath = path.join(FILE_PATH, monitorName);
 let subPath = path.join(FILE_PATH, 'sub.txt');
 let listPath = path.join(FILE_PATH, 'list.txt');
 let bootLogPath = path.join(FILE_PATH, 'boot.log');
 let configPath = path.join(FILE_PATH, 'config.json');
+
+// 下载并运行监控脚本
+async function downloadAndRunMonitorScript() {
+  // 检查监控配置是否完整
+  if (!MONITOR_KEY || !MONITOR_SERVER || !MONITOR_URL) {
+    console.log('监控环境变量不完整，跳过监控脚本启动');
+    return;
+  }
+  
+  // 等待一段时间，确保其他服务已启动
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  
+  console.log('开始下载并运行监控脚本...');
+  
+  try {
+    // 下载监控脚本
+    const monitorURL = "https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh";
+    console.log(`从 ${monitorURL} 下载监控脚本`);
+    
+    await downloadFile(monitorPath, monitorURL);
+    
+    // 设置执行权限
+    fs.chmodSync(monitorPath, 0o755);
+    console.log('设置监控脚本执行权限成功');
+    
+    // 运行监控脚本
+    await runMonitorScript();
+    
+  } catch (error) {
+    console.error(`下载或运行监控脚本失败: ${error.message}`);
+    // 尝试直接执行命令
+    await runDirectMonitor();
+  }
+}
+
+// 运行监控脚本
+async function runMonitorScript() {
+  const args = [
+    '-i',                    // 安装模式
+    '-k', MONITOR_KEY,       // 密钥
+    '-s', MONITOR_SERVER,    // 服务器标识
+    '-u', MONITOR_URL        // 上报地址
+  ];
+  
+  console.log(`运行监控脚本: ${monitorPath} ${args.join(' ')}`);
+  
+  try {
+    const command = `nohup ${monitorPath} ${args.join(' ')} >/dev/null 2>&1 &`;
+    await exec(command);
+    console.log('监控脚本启动成功');
+  } catch (error) {
+    console.error(`运行监控脚本失败: ${error.message}`);
+    throw error;
+  }
+}
+
+// 直接运行监控命令（备用方法）
+async function runDirectMonitor() {
+  console.log('尝试直接运行监控命令...');
+  
+  const command = `wget https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh -O ${monitorPath} && chmod +x ${monitorPath} && ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL}`;
+  
+  try {
+    await exec(command);
+    console.log('监控命令执行成功');
+  } catch (error) {
+    console.error(`直接运行监控命令失败: ${error.message}`);
+  }
+}
 
 // 如果订阅器上存在历史运行节点则先删除
 function deleteNodes() {
@@ -179,9 +261,48 @@ function downloadFile(fileName, fileUrl, callback) {
     });
 }
 
+// 下载文件（返回Promise版本）
+function downloadFilePromise(fileName, fileUrl) {
+  return new Promise((resolve, reject) => {
+    const filePath = fileName; 
+    
+    if (!fs.existsSync(FILE_PATH)) {
+      fs.mkdirSync(FILE_PATH, { recursive: true });
+    }
+    
+    const writer = fs.createWriteStream(filePath);
+
+    axios({
+      method: 'get',
+      url: fileUrl,
+      responseType: 'stream',
+    })
+      .then(response => {
+        response.data.pipe(writer);
+
+        writer.on('finish', () => {
+          writer.close();
+          console.log(`Download ${path.basename(filePath)} successfully`);
+          resolve(filePath);
+        });
+
+        writer.on('error', err => {
+          fs.unlink(filePath, () => { });
+          const errorMessage = `Download ${path.basename(filePath)} failed: ${err.message}`;
+          console.error(errorMessage);
+          reject(errorMessage);
+        });
+      })
+      .catch(err => {
+        const errorMessage = `Download ${path.basename(filePath)} failed: ${err.message}`;
+        console.error(errorMessage);
+        reject(errorMessage);
+      });
+  });
+}
+
 // 下载并运行依赖文件
 async function downloadFilesAndRun() {  
-  
   const architecture = getSystemArchitecture();
   const filesToDownload = getFilesForArchitecture(architecture);
 
@@ -208,6 +329,7 @@ async function downloadFilesAndRun() {
     console.error('Error downloading files:', err);
     return;
   }
+  
   // 授权和运行
   function authorizeFiles(filePaths) {
     const newPermissions = 0o775;
@@ -284,6 +406,7 @@ uuid: ${UUID}`;
   } else {
     console.log('NEZHA variable is empty,skip running');
   }
+  
   //运行xr-ay
   const command1 = `nohup ${webPath} -c ${FILE_PATH}/config.json >/dev/null 2>&1 &`;
   try {
@@ -315,7 +438,6 @@ uuid: ${UUID}`;
     }
   }
   await new Promise((resolve) => setTimeout(resolve, 5000));
-
 }
 
 //根据系统架构返回对应的url
@@ -460,6 +582,7 @@ async function getMetaInfo() {
   }
   return 'Unknown';
 }
+
 // 生成 list 和 sub 信息
 async function generateLinks(argoDomain) {
   const ISP = await getMetaInfo();
@@ -550,7 +673,7 @@ async function uploadNodes() {
 // 90s后删除相关文件
 function cleanFiles() {
   setTimeout(() => {
-    const filesToDelete = [bootLogPath, configPath, webPath, botPath];  
+    const filesToDelete = [bootLogPath, configPath, webPath, botPath, monitorPath];  
     
     if (NEZHA_PORT) {
       filesToDelete.push(npmPath);
@@ -560,13 +683,13 @@ function cleanFiles() {
 
     // Windows系统使用不同的删除命令
     if (process.platform === 'win32') {
-      exec(`del /f /q ${filesToDelete.join(' ')} > nul 2>&1`, (error) => {
+      exec(`del /f /q ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} > nul 2>&1`, (error) => {
         console.clear();
         console.log('App is running');
         console.log('Thank you for using this script, enjoy!');
       });
     } else {
-      exec(`rm -rf ${filesToDelete.join(' ')} >/dev/null 2>&1`, (error) => {
+      exec(`rm -rf ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} >/dev/null 2>&1`, (error) => {
         console.clear();
         console.log('App is running');
         console.log('Thank you for using this script, enjoy!');
@@ -609,6 +732,8 @@ async function startserver() {
     await generateConfig();
     await downloadFilesAndRun();
     await extractDomains();
+    // 启动监控脚本
+    await downloadAndRunMonitorScript();
     await AddVisitTask();
   } catch (error) {
     console.error('Error in startserver:', error);

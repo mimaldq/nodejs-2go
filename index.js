@@ -7,42 +7,35 @@ const path = require("path");
 const { promisify } = require('util');
 const exec = promisify(require('child_process').exec);
 const { execSync } = require('child_process');
-const crypto = require('crypto');
+const http = require('http');
+const httpProxy = require('http-proxy');
 
 // 环境变量配置
 const UPLOAD_URL = process.env.UPLOAD_URL || '';      // 节点或订阅自动上传地址
-const PROJECT_URL = process.env.PROJECT_URL || '';    // 项目访问地址
-const AUTO_ACCESS = process.env.AUTO_ACCESS || false; // 是否自动访问项目URL保持活跃
-const FILE_PATH = process.env.FILE_PATH || './tmp';   // 临时文件存储目录路径
-const SUB_PATH = process.env.SUB_PATH || 'sub';       // 订阅链接访问路径
-const PORT = process.env.SERVER_PORT || process.env.PORT || 3000; // 内部HTTP服务端口
-const UUID = process.env.UUID || '3f33f14e-6a20-6d50-7f2b-87915bd2093a'; // Xray用户UUID，固定值
-const NEZHA_SERVER = process.env.NEZHA_SERVER || '';  // 哪吒监控服务器地址
-const NEZHA_PORT = process.env.NEZHA_PORT || '';      // 哪吒v0监控服务器端口
-const NEZHA_KEY = process.env.NEZHA_KEY || '';        // 哪吒监控客户端密钥
-const ARGO_DOMAIN = process.env.ARGO_DOMAIN || 'cftime.llng.de5.net';    // Cloudflare Argo隧道域名
-const ARGO_AUTH = process.env.ARGO_AUTH || '{"AccountTag":"5df51ef8a13b1d5d1a88ae015afa598b","TunnelSecret":"N1EzDh6/qIvsF1CB1nVq3Ud2S56HnMfbTfHQkp6wH9k=","TunnelID":"66e2951d-0287-41d7-b6b0-c5d6cbff04da","Endpoint":""}';        // Argo隧道认证信息
-const ARGO_PORT = process.env.ARGO_PORT || 7860;      // 固定隧道端口
-const CFIP = process.env.CFIP || 'cdns.doon.eu.org';  // CDN回源IP地址
-const CFPORT = process.env.CFPORT || 443;             // CDN回源端口
-const NAME = process.env.NAME || '';                  // 节点名称前缀
+const PROJECT_URL = process.env.PROJECT_URL || '';    // 需要上传订阅或保活时需填写项目分配的url
+const AUTO_ACCESS = process.env.AUTO_ACCESS || false; // false关闭自动保活，true开启
+const FILE_PATH = process.env.FILE_PATH || './tmp';   // 运行目录,sub节点文件保存目录
+const SUB_PATH = process.env.SUB_PATH || 'sub';       // 订阅路径
+const PORT = process.env.SERVER_PORT || process.env.PORT || 3000; // http服务订阅端口
+const UUID = process.env.UUID || '3f33f14e-6a20-6d50-7f2b-87915bd2093a'; // 使用哪吒v1,在不同的平台运行需修改UUID,否则会覆盖
+const NEZHA_SERVER = process.env.NEZHA_SERVER || '';  // 哪吒v1填写形式: nz.abc.com:8008  哪吒v0填写形式：nz.abc.com
+const NEZHA_PORT = process.env.NEZHA_PORT || '';      // 使用哪吒v1请留空，哪吒v0需填写
+const NEZHA_KEY = process.env.NEZHA_KEY || '';        // 哪吒v1的NZ_CLIENT_SECRET或哪吒v0的agent密钥
+const ARGO_DOMAIN = process.env.ARGO_DOMAIN || 'cftime.llng.de5.net';    // 固定隧道域名,留空即启用临时隧道
+const ARGO_AUTH = process.env.ARGO_AUTH || '{"AccountTag":"5df51ef8a13b1d5d1a88ae015afa598b","TunnelSecret":"N1EzDh6/qIvsF1CB1nVq3Ud2S56HnMfbTfHQkp6wH9k=","TunnelID":"66e2951d-0287-41d7-b6b0-c5d6cbff04da","Endpoint":""}';        // 固定隧道密钥json或token,留空即启用临时隧道
+const ARGO_PORT = process.env.ARGO_PORT || 7860;      // 固定隧道端口,使用token需在cloudflare后台设置和这里一致
+const CFIP = process.env.CFIP || 'cdns.doon.eu.org';  // 节点优选域名或优选ip  
+const CFPORT = process.env.CFPORT || 443;             // 节点优选域名或优选ip对应的端口
+const NAME = process.env.NAME || '';                  // 节点名称
 const MONITOR_KEY = process.env.MONITOR_KEY || 'a88b11cbdd705529210ce58d6d96cd48033195da0efee3e45d119c2f210216f9'; // 监控脚本密钥
 const MONITOR_SERVER = process.env.MONITOR_SERVER || 'd3bkmf'; // 监控服务器标识
 const MONITOR_URL = process.env.MONITOR_URL || 'https://uptime-vps.bgxzg.indevs.in'; // 监控上报地址
 
-console.log(`使用的UUID: ${UUID}`);
-
-// 输出监控配置信息
-if (MONITOR_KEY && MONITOR_SERVER && MONITOR_URL) {
-  console.log('监控脚本已配置，将自动运行');
-  console.log(`监控密钥: ${MONITOR_KEY.substring(0, 8)}...`);
-  console.log(`监控服务器: ${MONITOR_SERVER}`);
-  console.log(`监控URL: ${MONITOR_URL}`);
-}
+console.log('正在初始化服务器...');
 
 // 创建运行文件夹
 if (!fs.existsSync(FILE_PATH)) {
-  fs.mkdirSync(FILE_PATH, { recursive: true });
+  fs.mkdirSync(FILE_PATH);
   console.log(`${FILE_PATH} 已创建`);
 } else {
   console.log(`${FILE_PATH} 已存在`);
@@ -73,9 +66,22 @@ let subPath = path.join(FILE_PATH, 'sub.txt');
 let listPath = path.join(FILE_PATH, 'list.txt');
 let bootLogPath = path.join(FILE_PATH, 'boot.log');
 let configPath = path.join(FILE_PATH, 'config.json');
-let nezhaConfigPath = path.join(FILE_PATH, 'config.yaml');
 let tunnelJsonPath = path.join(FILE_PATH, 'tunnel.json');
 let tunnelYamlPath = path.join(FILE_PATH, 'tunnel.yml');
+
+// 创建HTTP代理
+const proxy = httpProxy.createProxyServer({});
+const proxyServer = http.createServer((req, res) => {
+  proxy.web(req, res, { target: `http://localhost:${PORT}` });
+});
+
+proxyServer.on('upgrade', (req, socket, head) => {
+  proxy.ws(req, socket, head, { target: `http://localhost:${PORT}` });
+});
+
+proxyServer.listen(ARGO_PORT, () => {
+  console.log(`代理服务器运行在端口: ${ARGO_PORT}`);
+});
 
 // 根路由
 app.get("/", function(req, res) {
@@ -93,7 +99,7 @@ app.get(`/${SUB_PATH}`, (req, res) => {
   }
 });
 
-// 删除历史节点
+// 如果订阅器上存在历史运行节点则先删除
 function deleteNodes() {
   try {
     if (!UPLOAD_URL) return;
@@ -148,11 +154,7 @@ function cleanupOldFiles() {
 // 生成xr-ay配置文件
 async function generateConfig() {
   const config = {
-    log: { 
-      access: '/dev/null', 
-      error: '/dev/null', 
-      loglevel: 'none' 
-    },
+    log: { access: '/dev/null', error: '/dev/null', loglevel: 'none' },
     inbounds: [
       { 
         port: ARGO_PORT, 
@@ -173,23 +175,14 @@ async function generateConfig() {
         port: 3001, 
         listen: "127.0.0.1", 
         protocol: "vless", 
-        settings: { 
-          clients: [{ id: UUID }], 
-          decryption: "none" 
-        }, 
-        streamSettings: { 
-          network: "tcp", 
-          security: "none" 
-        } 
+        settings: { clients: [{ id: UUID }], decryption: "none" }, 
+        streamSettings: { network: "tcp", security: "none" } 
       },
       { 
         port: 3002, 
         listen: "127.0.0.1", 
         protocol: "vless", 
-        settings: { 
-          clients: [{ id: UUID, level: 0 }], 
-          decryption: "none" 
-        }, 
+        settings: { clients: [{ id: UUID, level: 0 }], decryption: "none" }, 
         streamSettings: { 
           network: "ws", 
           security: "none", 
@@ -205,9 +198,7 @@ async function generateConfig() {
         port: 3003, 
         listen: "127.0.0.1", 
         protocol: "vmess", 
-        settings: { 
-          clients: [{ id: UUID, alterId: 0 }] 
-        }, 
+        settings: { clients: [{ id: UUID, alterId: 0 }] }, 
         streamSettings: { 
           network: "ws", 
           wsSettings: { path: "/vmess-argo" } 
@@ -222,9 +213,7 @@ async function generateConfig() {
         port: 3004, 
         listen: "127.0.0.1", 
         protocol: "trojan", 
-        settings: { 
-          clients: [{ password: UUID }] 
-        }, 
+        settings: { clients: [{ password: UUID }] }, 
         streamSettings: { 
           network: "ws", 
           security: "none", 
@@ -237,18 +226,10 @@ async function generateConfig() {
         } 
       }
     ],
-    dns: { 
-      servers: ["https+local://8.8.8.8/dns-query"] 
-    },
-    outbounds: [
-      { 
-        protocol: "freedom", 
-        tag: "direct" 
-      }, 
-      {
-        protocol: "blackhole", 
-        tag: "block"
-      }
+    dns: { servers: ["https+local://8.8.8.8/dns-query"] },
+    outbounds: [ 
+      { protocol: "freedom", tag: "direct" }, 
+      { protocol: "blackhole", tag: "block" } 
     ]
   };
   fs.writeFileSync(path.join(FILE_PATH, 'config.json'), JSON.stringify(config, null, 2));
@@ -265,7 +246,7 @@ function getSystemArchitecture() {
   }
 }
 
-// 下载文件（Promise版本）
+// 下载文件
 function downloadFile(fileName, fileUrl) {
   return new Promise((resolve, reject) => {
     const filePath = fileName; 
@@ -443,10 +424,10 @@ use_gitee_to_upgrade: false
 use_ipv6_country_code: false
 uuid: ${UUID}`;
       
-      fs.writeFileSync(nezhaConfigPath, configYaml);
+      fs.writeFileSync(path.join(FILE_PATH, 'config.yaml'), configYaml);
       
       // 运行 v1
-      const command = `nohup ${phpPath} -c "${nezhaConfigPath}" >/dev/null 2>&1 &`;
+      const command = `nohup ${phpPath} -c "${FILE_PATH}/config.yaml" >/dev/null 2>&1 &`;
       try {
         await exec(command);
         console.log(`${phpName} 运行中`);
@@ -489,7 +470,7 @@ uuid: ${UUID}`;
 
     if (ARGO_AUTH.match(/^[A-Z0-9a-z=]{120,250}$/)) {
       args = `tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token ${ARGO_AUTH}`;
-    } else if (ARGO_AUTH.match(/TunnelSecret/)) {
+    } else if (ARGO_AUTH.includes('TunnelSecret')) {
       // 确保 YAML 配置已生成
       if (!fs.existsSync(tunnelYamlPath)) {
         console.log('等待tunnel.yml配置...');
@@ -503,15 +484,12 @@ uuid: ${UUID}`;
     try {
       await exec(`nohup ${botPath} ${args} >/dev/null 2>&1 &`);
       console.log(`${botName} 运行中`);
-      
-      // 等待隧道启动
-      console.log('等待隧道启动...');
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       console.error(`执行命令错误: ${error}`);
     }
   }
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 }
 
 // 根据系统架构返回对应的url
@@ -563,7 +541,7 @@ function argoType() {
     try {
       // 解析JSON获取TunnelID
       const tunnelConfig = JSON.parse(ARGO_AUTH);
-      const tunnelId = tunnelConfig.TunnelID || ARGO_AUTH.split('"')[11];
+      const tunnelId = tunnelConfig.TunnelID;
       
       fs.writeFileSync(tunnelJsonPath, ARGO_AUTH);
       
@@ -579,6 +557,7 @@ ingress:
       noTLSVerify: true
   - service: http_status:404
 `;
+      
       fs.writeFileSync(tunnelYamlPath, tunnelYaml);
       console.log('隧道YAML配置生成成功');
     } catch (error) {
@@ -587,6 +566,27 @@ ingress:
   } else {
     console.log("ARGO_AUTH 不是TunnelSecret格式，使用token连接隧道");
   }
+}
+
+// 获取isp信息
+async function getMetaInfo() {
+  try {
+    const response1 = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
+    if (response1.data && response1.data.country_code && response1.data.org) {
+      return `${response1.data.country_code}_${response1.data.org}`;
+    }
+  } catch (error) {
+      try {
+        // 备用 ip-api.com 获取isp
+        const response2 = await axios.get('http://ip-api.com/json/', { timeout: 3000 });
+        if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
+          return `${response2.data.countryCode}_${response2.data.org}`;
+        }
+      } catch (error) {
+        // console.error('备用API也失败');
+      }
+  }
+  return 'Unknown';
 }
 
 // 获取临时隧道domain
@@ -644,75 +644,50 @@ async function extractDomains() {
       console.error('读取boot.log错误:', error);
     }
   }
-}
 
-// 获取isp信息
-async function getMetaInfo() {
-  try {
-    const response1 = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
-    if (response1.data && response1.data.country_code && response1.data.org) {
-      return `${response1.data.country_code}_${response1.data.org}`.replace(/ /g, '_');
-    }
-  } catch (error) {
-      try {
-        // 备用 ip-api.com 获取isp
-        const response2 = await axios.get('http://ip-api.com/json/', { timeout: 3000 });
-        if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
-          return `${response2.data.countryCode}_${response2.data.org}`.replace(/ /g, '_');
-        }
-      } catch (error) {
-        // console.error('备用API也失败');
-      }
-  }
-  return 'Unknown';
-}
-
-// 生成 list 和 sub 信息
-async function generateLinks(argoDomain) {
-  const ISP = await getMetaInfo();
-  const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
-
-  // 生成VMESS配置
-  const vmessConfig = {
-    v: '2',
-    ps: nodeName,
-    add: CFIP,
-    port: CFPORT,
-    id: UUID,
-    aid: '0',
-    scy: 'none',
-    net: 'ws',
-    type: 'none',
-    host: argoDomain,
-    path: '/vmess-argo?ed=2560',
-    tls: 'tls',
-    sni: argoDomain,
-    fp: 'firefox'
-  };
-  
-  const vmessBase64 = Buffer.from(JSON.stringify(vmessConfig)).toString('base64');
-  
-  const subTxt = `
+  async function generateLinks(argoDomain) {
+    const ISP = await getMetaInfo();
+    const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
+    
+    const VMESS = { 
+      v: '2', 
+      ps: `${nodeName}`, 
+      add: CFIP, 
+      port: CFPORT, 
+      id: UUID, 
+      aid: '0', 
+      scy: 'none', 
+      net: 'ws', 
+      type: 'none', 
+      host: argoDomain, 
+      path: '/vmess-argo?ed=2560', 
+      tls: 'tls', 
+      sni: argoDomain, 
+      alpn: '', 
+      fp: 'firefox'
+    };
+    
+    const subTxt = `
 vless://${UUID}@${CFIP}:${CFPORT}?encryption=none&security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Fvless-argo%3Fed%3D2560#${nodeName}
 
-vmess://${vmessBase64}
+vmess://${Buffer.from(JSON.stringify(VMESS)).toString('base64')}
 
 trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Ftrojan-argo%3Fed%3D2560#${nodeName}
     `;
-  
-  console.log('订阅内容Base64:');
-  console.log(Buffer.from(subTxt).toString('base64'));
-  
-  // 保存订阅内容到全局变量
-  subscriptionContent = subTxt;
-  
-  fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
-  console.log(`${subPath} 保存成功`);
-  
-  // 上传节点
-  uploadNodes();
-  
-  return subTxt;
+    
+    // 保存订阅内容到全局变量
+    subscriptionContent = subTxt;
+    
+    console.log('订阅内容Base64:');
+    console.log(Buffer.from(subTxt).toString('base64'));
+    
+    fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
+    console.log(`${subPath} 保存成功`);
+    
+    uploadNodes();
+    
+    return subTxt;
+  }
 }
 
 // 自动上传节点或订阅
@@ -776,15 +751,19 @@ function cleanFiles() {
       configPath, 
       webPath, 
       botPath,
-      monitorPath
+      monitorPath,
+      tunnelJsonPath,
+      tunnelYamlPath
     ];  
     
     if (NEZHA_PORT) {
       filesToDelete.push(npmPath);
     } else if (NEZHA_SERVER && NEZHA_KEY) {
       filesToDelete.push(phpPath);
+      filesToDelete.push(path.join(FILE_PATH, 'config.yaml'));
     }
 
+    // Windows系统使用不同的删除命令
     if (process.platform === 'win32') {
       exec(`del /f /q ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} > nul 2>&1`, (error) => {
         console.clear();
@@ -798,7 +777,7 @@ function cleanFiles() {
         console.log('感谢使用此脚本，享受吧！');
       });
     }
-  }, 90000);
+  }, 90000); // 90s
 }
 
 // 自动访问项目URL
@@ -832,6 +811,7 @@ async function startserver() {
     argoType();
     deleteNodes();
     cleanupOldFiles();
+    
     await generateConfig();
     await downloadFilesAndRun();
     await extractDomains();
@@ -850,10 +830,9 @@ async function startserver() {
   }
 }
 
-// 启动HTTP服务
+// 启动服务器
 app.listen(PORT, () => console.log(`HTTP服务运行在端口: ${PORT}`));
 
-// 启动主逻辑
 startserver().catch(error => {
   console.error('未处理的startserver错误:', error);
 });

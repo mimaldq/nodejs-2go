@@ -15,7 +15,7 @@ const AUTO_ACCESS = process.env.AUTO_ACCESS || false; // 是否自动访问项�
 const FILE_PATH = process.env.FILE_PATH || './tmp';   // 临时文件存储目录路径
 const SUB_PATH = process.env.SUB_PATH || 'sub';       // 订阅链接访问路径
 const PORT = process.env.SERVER_PORT || process.env.PORT || 3000; // 内部HTTP服务端口
-const ARGO_PORT = process.env.ARGO_PORT || 7860;      // 固定隧道端口
+const ARGO_PORT = process.env.ARGO_PORT || 8001;      // 固定隧道端口
 const UUID = process.env.UUID || '3f33f14e-6a20-6d50-7f2b-87915bd2093a'; // Xray用户UUID，固定值
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';  // 哪吒监控服务器地址
 const NEZHA_PORT = process.env.NEZHA_PORT || '';      // 哪吒v0监控服务器端口
@@ -132,7 +132,8 @@ function cleanupOldFiles() {
       const filePath = path.join(FILE_PATH, file);
       try {
         const stat = fs.statSync(filePath);
-        if (stat.isFile()) {
+        // 不删除监控脚本文件
+        if (stat.isFile() && file !== monitorName) {
           fs.unlinkSync(filePath);
         }
       } catch (err) {
@@ -687,15 +688,14 @@ async function uploadNodes() {
   }
 }
 
-// 90s后删除相关文件
+// 90s后删除相关文件（不删除监控脚本）
 function cleanFiles() {
   setTimeout(() => {
     const filesToDelete = [
       bootLogPath, 
       configPath, 
       webPath, 
-      botPath,
-      monitorPath
+      botPath
     ];  
     
     if (NEZHA_PORT) {
@@ -708,12 +708,14 @@ function cleanFiles() {
       exec(`del /f /q ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} > nul 2>&1`, (error) => {
         console.clear();
         console.log('应用正在运行');
+        console.log('监控脚本已保留，继续运行');
         console.log('感谢使用此脚本，享受吧！');
       });
     } else {
       exec(`rm -rf ${filesToDelete.filter(f => fs.existsSync(f)).join(' ')} >/dev/null 2>&1`, (error) => {
         console.clear();
         console.log('应用正在运行');
+        console.log('监控脚本已保留，继续运行');
         console.log('感谢使用此脚本，享受吧！');
       });
     }
@@ -762,7 +764,7 @@ async function startserver() {
     
     await AddVisitTask();
     
-    // 清理文件
+    // 清理文件（不清理监控脚本）
     cleanFiles();
     
     console.log('服务器初始化完成');

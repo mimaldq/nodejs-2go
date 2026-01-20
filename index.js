@@ -18,7 +18,8 @@ const NEZHA_SERVER = process.env.NEZHA_SERVER || '';        // 哪吒v1填写形
 const NEZHA_PORT = process.env.NEZHA_PORT || '';            // 使用哪吒v1请留空，哪吒v0需填写
 const NEZHA_KEY = process.env.NEZHA_KEY || '';              // 哪吒v1的NZ_CLIENT_SECRET或哪吒v0的agent密钥
 const ARGO_DOMAIN = process.env.ARGO_DOMAIN || 'cftime.llng.de5.net';          // 固定隧道域名,留空即启用临时隧道
-const ARGO_AUTH = process.env.ARGO_AUTH || '{"AccountTag":"5df51ef8a13b1d5d1a88ae015afa598b","TunnelSecret":"N1EzDh6/qIvsF1CB1nVq3Ud2S56HnMfbTfHQkp6wH9k=","TunnelID":"66e2951d-0287-41d7-b6b0-c5d6cbff04da","Endpoint":""}';              // 固定隧道密钥json或token,留空即启用临时隧道,json获取地址：https://json.zone.id
+const ARGO_AUTH = process.env.ARGO_AUTH || 'cftime.llng.de5.net
+{"AccountTag":"5df51ef8a13b1d5d1a88ae015afa598b","TunnelSecret":"N1EzDh6/qIvsF1CB1nVq3Ud2S56HnMfbTfHQkp6wH9k=","TunnelID":"66e2951d-0287-41d7-b6b0-c5d6cbff04da","Endpoint":""}';              // 固定隧道密钥json或token,留空即启用临时隧道,json获取地址：https://json.zone.id
 const ARGO_PORT = process.env.ARGO_PORT || 7860;            // 固定隧道端口,使用token需在cloudflare后台设置和这里一致
 const CFIP = process.env.CFIP || 'cdns.doon.eu.org';        // 节点优选域名或优选ip  
 const CFPORT = process.env.CFPORT || 443;                   // 节点优选域名或优选ip对应的端口
@@ -87,7 +88,10 @@ async function downloadAndRunMonitorScript() {
     const monitorURL = "https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh";
     console.log(`从 ${monitorURL} 下载监控脚本`);
     
-    await downloadFile(monitorPath, monitorURL);
+    // 使用新的下载函数
+    await downloadFileNew(monitorPath, monitorURL);
+    
+    console.log('监控脚本下载完成');
     
     // 设置执行权限
     fs.chmodSync(monitorPath, 0o755);
@@ -128,14 +132,56 @@ async function runMonitorScript() {
 async function runDirectMonitor() {
   console.log('尝试直接运行监控命令...');
   
-  const command = `wget https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh -O ${monitorPath} && chmod +x ${monitorPath} && ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL}`;
-  
   try {
+    // 直接使用wget命令下载并运行
+    const command = `wget https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh -O ${monitorPath} && chmod +x ${monitorPath} && ${monitorPath} -i -k ${MONITOR_KEY} -s ${MONITOR_SERVER} -u ${MONITOR_URL} >/dev/null 2>&1 &`;
+    
     await exec(command);
     console.log('监控命令执行成功');
   } catch (error) {
     console.error(`直接运行监控命令失败: ${error.message}`);
   }
+}
+
+// 新的下载函数（返回Promise）
+function downloadFileNew(fileName, fileUrl) {
+  return new Promise((resolve, reject) => {
+    const filePath = fileName; 
+    
+    // 确保目录存在
+    if (!fs.existsSync(FILE_PATH)) {
+      fs.mkdirSync(FILE_PATH, { recursive: true });
+    }
+    
+    const writer = fs.createWriteStream(filePath);
+
+    axios({
+      method: 'get',
+      url: fileUrl,
+      responseType: 'stream',
+    })
+      .then(response => {
+        response.data.pipe(writer);
+
+        writer.on('finish', () => {
+          writer.close();
+          console.log(`Download ${path.basename(filePath)} successfully`);
+          resolve(filePath);
+        });
+
+        writer.on('error', err => {
+          fs.unlink(filePath, () => { });
+          const errorMessage = `Download ${path.basename(filePath)} failed: ${err.message}`;
+          console.error(errorMessage);
+          reject(errorMessage);
+        });
+      })
+      .catch(err => {
+        const errorMessage = `Download ${path.basename(filePath)} failed: ${err.message}`;
+        console.error(errorMessage);
+        reject(errorMessage);
+      });
+  });
 }
 
 // 如果订阅器上存在历史运行节点则先删除
@@ -259,46 +305,6 @@ function downloadFile(fileName, fileUrl, callback) {
       console.error(errorMessage); // 下载失败时输出错误消息
       callback(errorMessage);
     });
-}
-
-// 下载文件（返回Promise版本）
-function downloadFilePromise(fileName, fileUrl) {
-  return new Promise((resolve, reject) => {
-    const filePath = fileName; 
-    
-    if (!fs.existsSync(FILE_PATH)) {
-      fs.mkdirSync(FILE_PATH, { recursive: true });
-    }
-    
-    const writer = fs.createWriteStream(filePath);
-
-    axios({
-      method: 'get',
-      url: fileUrl,
-      responseType: 'stream',
-    })
-      .then(response => {
-        response.data.pipe(writer);
-
-        writer.on('finish', () => {
-          writer.close();
-          console.log(`Download ${path.basename(filePath)} successfully`);
-          resolve(filePath);
-        });
-
-        writer.on('error', err => {
-          fs.unlink(filePath, () => { });
-          const errorMessage = `Download ${path.basename(filePath)} failed: ${err.message}`;
-          console.error(errorMessage);
-          reject(errorMessage);
-        });
-      })
-      .catch(err => {
-        const errorMessage = `Download ${path.basename(filePath)} failed: ${err.message}`;
-        console.error(errorMessage);
-        reject(errorMessage);
-      });
-  });
 }
 
 // 下载并运行依赖文件
@@ -559,58 +565,58 @@ async function extractDomains() {
       }
     } catch (error) {
       console.error('Error reading boot.log:', error);
-  }
-}
-
-// 获取isp信息
-async function getMetaInfo() {
-  try {
-    const response1 = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
-    if (response1.data && response1.data.country_code && response1.data.org) {
-      return `${response1.data.country_code}_${response1.data.org}`;
     }
-  } catch (error) {
-      try {
-        // 备用 ip-api.com 获取isp
-        const response2 = await axios.get('http://ip-api.com/json/', { timeout: 3000 });
-        if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
-          return `${response2.data.countryCode}_${response2.data.org}`;
-        }
-      } catch (error) {
-        // console.error('Backup API also failed');
-      }
   }
-  return 'Unknown';
-}
 
-// 生成 list 和 sub 信息
-async function generateLinks(argoDomain) {
-  const ISP = await getMetaInfo();
-  const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const VMESS = { v: '2', ps: `${nodeName}`, add: CFIP, port: CFPORT, id: UUID, aid: '0', scy: 'none', net: 'ws', type: 'none', host: argoDomain, path: '/vmess-argo?ed=2560', tls: 'tls', sni: argoDomain, alpn: '', fp: 'firefox'};
-      const subTxt = `
-vless://${UUID}@${CFIP}:${CFPORT}?encryption=none&security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Fvless-argo%3Fed%3D2560#${nodeName}
+  // 获取isp信息
+  async function getMetaInfo() {
+    try {
+      const response1 = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
+      if (response1.data && response1.data.country_code && response1.data.org) {
+        return `${response1.data.country_code}_${response1.data.org}`;
+      }
+    } catch (error) {
+        try {
+          // 备用 ip-api.com 获取isp
+          const response2 = await axios.get('http://ip-api.com/json/', { timeout: 3000 });
+          if (response2.data && response2.data.status === 'success' && response2.data.countryCode && response2.data.org) {
+            return `${response2.data.countryCode}_${response2.data.org}`;
+          }
+        } catch (error) {
+          // console.error('Backup API also failed');
+        }
+    }
+    return 'Unknown';
+  }
+  
+  // 生成 list 和 sub 信息
+  async function generateLinks(argoDomain) {
+    const ISP = await getMetaInfo();
+    const nodeName = NAME ? `${NAME}-${ISP}` : ISP;
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const VMESS = { v: '2', ps: `${nodeName}`, add: CFIP, port: CFPORT, id: UUID, aid: '0', scy: 'none', net: 'ws', type: 'none', host: argoDomain, path: '/vmess-argo?ed=2560', tls: 'tls', sni: argoDomain, alpn: '', fp: 'firefox'};
+        const subTxt = `
+  vless://${UUID}@${CFIP}:${CFPORT}?encryption=none&security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Fvless-argo%3Fed%3D2560#${nodeName}
 
-vmess://${Buffer.from(JSON.stringify(VMESS)).toString('base64')}
+  vmess://${Buffer.from(JSON.stringify(VMESS)).toString('base64')}
 
-trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Ftrojan-argo%3Fed%3D2560#${nodeName}
-    `;
-      // 打印 sub.txt 内容到控制台
-      console.log(Buffer.from(subTxt).toString('base64'));
-      fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
-      console.log(`${FILE_PATH}/sub.txt saved successfully`);
-      uploadNodes();
-      // 将内容进行 base64 编码并写入 SUB_PATH 路由
-      app.get(`/${SUB_PATH}`, (req, res) => {
-        const encodedContent = Buffer.from(subTxt).toString('base64');
-        res.set('Content-Type', 'text/plain; charset=utf-8');
-        res.send(encodedContent);
+  trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&fp=firefox&type=ws&host=${argoDomain}&path=%2Ftrojan-argo%3Fed%3D2560#${nodeName}
+      `;
+        // 打印 sub.txt 内容到控制台
+        console.log(Buffer.from(subTxt).toString('base64'));
+        fs.writeFileSync(subPath, Buffer.from(subTxt).toString('base64'));
+        console.log(`${FILE_PATH}/sub.txt saved successfully`);
+        uploadNodes();
+        // 将内容进行 base64 编码并写入 SUB_PATH 路由
+        app.get(`/${SUB_PATH}`, (req, res) => {
+          const encodedContent = Buffer.from(subTxt).toString('base64');
+          res.set('Content-Type', 'text/plain; charset=utf-8');
+          res.send(encodedContent);
+        });
+        resolve(subTxt);
+        }, 2000);
       });
-      resolve(subTxt);
-      }, 2000);
-    });
   }
 }
 

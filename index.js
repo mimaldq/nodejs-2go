@@ -17,7 +17,7 @@ const AUTO_ACCESS = process.env.AUTO_ACCESS === 'true' || false; // false关闭�
 const FILE_PATH = process.env.FILE_PATH || './tmp';   // 运行目录,sub节点文件保存目录
 const SUB_PATH = process.env.SUB_PATH || 'sub';       // 订阅路径
 const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;        // http服务订阅端口
-const UUID = process.env.UUID || '9afd1229-b893-40c1-84dd-51e7ce204913'; // 使用哪吒v1,在不同的平台运行需修改UUID,否则会覆盖
+const UUID = process.env.UUID || 'e2cae6af-5cdd-fa48-4137-ad3e617fbab0'; // 使用哪吒v1,在不同的平台运行需修改UUID,否则会覆盖
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';        // 哪吒v1填写形式: nz.abc.com:8008  哪吒v0填写形式：nz.abc.com
 const NEZHA_PORT = process.env.NEZHA_PORT || '';            // 使用哪吒v1请留空，哪吒v0需填写
 const NEZHA_KEY = process.env.NEZHA_KEY || '';              // 哪吒v1的NZ_CLIENT_SECRET或哪吒v0的agent密钥
@@ -72,6 +72,16 @@ let monitorProcess = null;
 
 // 创建HTTP代理
 const proxy = httpProxy.createProxyServer();
+
+// 错误处理
+proxy.on('error', (err, req, res) => {
+  console.error('代理错误:', err);
+  if (!res.headersSent) {
+    res.status(500).send('代理错误');
+  }
+});
+
+// 创建HTTP代理服务器（外部端口）
 const proxyServer = http.createServer((req, res) => {
   const urlPath = req.url;
   
@@ -81,8 +91,10 @@ const proxyServer = http.createServer((req, res) => {
       urlPath === '/vless' || 
       urlPath === '/vmess' || 
       urlPath === '/trojan') {
-    proxy.web(req, res, { target: `http://localhost:${ARGO_PORT}` });
+    // 转发到Xray端口（3001）
+    proxy.web(req, res, { target: 'http://localhost:3001' });
   } else {
+    // 转发到HTTP服务器端口
     proxy.web(req, res, { target: `http://localhost:${PORT}` });
   }
 });
@@ -94,7 +106,7 @@ proxyServer.on('upgrade', (req, socket, head) => {
   if (urlPath.startsWith('/vless-argo') || 
       urlPath.startsWith('/vmess-argo') || 
       urlPath.startsWith('/trojan-argo')) {
-    proxy.ws(req, socket, head, { target: `http://localhost:${ARGO_PORT}` });
+    proxy.ws(req, socket, head, { target: 'http://localhost:3001' });
   } else {
     proxy.ws(req, socket, head, { target: `http://localhost:${PORT}` });
   }
@@ -104,10 +116,10 @@ proxyServer.on('upgrade', (req, socket, head) => {
 proxyServer.listen(ARGO_PORT, () => {
   console.log(`代理服务器启动在端口: ${ARGO_PORT}`);
   console.log(`HTTP流量 -> localhost:${PORT}`);
-  console.log(`Xray流量 -> localhost:${ARGO_PORT}`);
+  console.log(`Xray流量 -> localhost:3001`);
 });
 
-// 根路由
+// Express路由处理
 app.get("/", function(req, res) {
   const indexPath = path.join(__dirname, 'index.html');
   if (fs.existsSync(indexPath)) {
@@ -116,6 +128,8 @@ app.get("/", function(req, res) {
     res.send("Hello world!");
   }
 });
+
+// 订阅路由将在生成订阅后动态添加
 
 // 如果订阅器上存在历史运行节点则先删除
 function deleteNodes() {
@@ -177,91 +191,7 @@ async function generateConfig() {
       error: '/dev/null', 
       loglevel: 'none' 
     },
-    inbounds: [
-      { 
-        port: parseInt(ARGO_PORT),
-        protocol: 'vless', 
-        settings: { 
-          clients: [{ id: UUID, flow: 'xtls-rprx-vision' }], 
-          decryption: 'none', 
-          fallbacks: [
-            { dest: 3001 }, 
-            { path: "/vless-argo", dest: 3002 }, 
-            { path: "/vmess-argo", dest: 3003 }, 
-            { path: "/trojan-argo", dest: 3004 }
-          ] 
-        }, 
-        streamSettings: { network: 'tcp' } 
-      },
-      { 
-        port: 3001, 
-        listen: "127.0.0.1", 
-        protocol: "vless", 
-        settings: { 
-          clients: [{ id: UUID }], 
-          decryption: "none" 
-        }, 
-        streamSettings: { 
-          network: "tcp", 
-          security: "none" 
-        } 
-      },
-      { 
-        port: 3002, 
-        listen: "127.0.0.1", 
-        protocol: "vless", 
-        settings: { 
-          clients: [{ id: UUID, level: 0 }], 
-          decryption: "none" 
-        }, 
-        streamSettings: { 
-          network: "ws", 
-          security: "none", 
-          wsSettings: { path: "/vless-argo" } 
-        }, 
-        sniffing: { 
-          enabled: true, 
-          destOverride: ["http", "tls", "quic"], 
-          metadataOnly: false 
-        } 
-      },
-      { 
-        port: 3003, 
-        listen: "127.0.0.1", 
-        protocol: "vmess", 
-        settings: { 
-          clients: [{ id: UUID, alterId: 0 }] 
-        }, 
-        streamSettings: { 
-          network: "ws", 
-          wsSettings: { path: "/vmess-argo" } 
-        }, 
-        sniffing: { 
-          enabled: true, 
-          destOverride: ["http", "tls", "quic"], 
-          metadataOnly: false 
-        } 
-      },
-      { 
-        port: 3004, 
-        listen: "127.0.0.1", 
-        protocol: "trojan", 
-        settings: { 
-          clients: [{ password: UUID }] 
-        }, 
-        streamSettings: { 
-          network: "ws", 
-          security: "none", 
-          wsSettings: { path: "/trojan-argo" } 
-        }, 
-        sniffing: { 
-          enabled: true, 
-          destOverride: ["http", "tls", "quic"], 
-          metadataOnly: false 
-        } 
-      }
-    ],
-    dns: { 
+    dns: {
       servers: [
         "https+local://8.8.8.8/dns-query",
         "https+local://1.1.1.1/dns-query",
@@ -271,15 +201,121 @@ async function generateConfig() {
       queryStrategy: "UseIP",
       disableCache: false
     },
-    outbounds: [ 
-      { protocol: "freedom", tag: "direct", settings: { domainStrategy: "UseIP" } }, 
-      { protocol: "blackhole", tag: "block", settings: {} }
+    inbounds: [
+      {
+        port: 3001,
+        protocol: "vless",
+        settings: {
+          clients: [{
+            id: UUID,
+            flow: "xtls-rprx-vision"
+          }],
+          decryption: "none",
+          fallbacks: [
+            { dest: 3002 },
+            { path: "/vless-argo", dest: 3003 },
+            { path: "/vmess-argo", dest: 3004 },
+            { path: "/trojan-argo", dest: 3005 }
+          ]
+        },
+        streamSettings: {
+          network: "tcp"
+        }
+      },
+      {
+        port: 3002,
+        listen: "127.0.0.1",
+        protocol: "vless",
+        settings: {
+          clients: [{ id: UUID }],
+          decryption: "none"
+        },
+        streamSettings: {
+          network: "tcp",
+          security: "none"
+        }
+      },
+      {
+        port: 3003,
+        listen: "127.0.0.1",
+        protocol: "vless",
+        settings: {
+          clients: [{ id: UUID, level: 0 }],
+          decryption: "none"
+        },
+        streamSettings: {
+          network: "ws",
+          security: "none",
+          wsSettings: {
+            path: "/vless-argo"
+          }
+        },
+        sniffing: {
+          enabled: true,
+          destOverride: ["http", "tls", "quic"],
+          metadataOnly: false
+        }
+      },
+      {
+        port: 3004,
+        listen: "127.0.0.1",
+        protocol: "vmess",
+        settings: {
+          clients: [{ id: UUID, alterId: 0 }]
+        },
+        streamSettings: {
+          network: "ws",
+          wsSettings: {
+            path: "/vmess-argo"
+          }
+        },
+        sniffing: {
+          enabled: true,
+          destOverride: ["http", "tls", "quic"],
+          metadataOnly: false
+        }
+      },
+      {
+        port: 3005,
+        listen: "127.0.0.1",
+        protocol: "trojan",
+        settings: {
+          clients: [{ password: UUID }]
+        },
+        streamSettings: {
+          network: "ws",
+          security: "none",
+          wsSettings: {
+            path: "/trojan-argo"
+          }
+        },
+        sniffing: {
+          enabled: true,
+          destOverride: ["http", "tls", "quic"],
+          metadataOnly: false
+        }
+      }
+    ],
+    outbounds: [
+      {
+        protocol: "freedom",
+        tag: "direct",
+        settings: {
+          domainStrategy: "UseIP"
+        }
+      },
+      {
+        protocol: "blackhole",
+        tag: "block",
+        settings: {}
+      }
     ],
     routing: {
       domainStrategy: "IPIfNonMatch",
       rules: []
     }
   };
+  
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   console.log("Xray配置文件生成完成");
 }
@@ -476,21 +512,6 @@ uuid: ${UUID}`;
     // 等待隧道启动
     console.log('等待隧道启动...');
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    
-    // 检查隧道是否成功启动
-    if (ARGO_AUTH && ARGO_AUTH.includes('TunnelSecret')) {
-      try {
-        // 检查进程是否在运行
-        if (process.platform === 'win32') {
-          await exec(`tasklist | findstr ${botName} > nul`);
-        } else {
-          await exec(`pgrep -f "[${botName.charAt(0)}]${botName.substring(1)}" > /dev/null`);
-        }
-        console.log('隧道运行成功');
-      } catch (error) {
-        console.error('隧道启动失败');
-      }
-    }
   }
   await new Promise((resolve) => setTimeout(resolve, 2000));
 }
@@ -911,6 +932,11 @@ async function startserver() {
     argoType();
     await generateConfig();
     await downloadFilesAndRun();
+    
+    // 等待隧道启动
+    console.log('等待隧道启动...');
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    
     await extractDomains();
     await AddVisitTask();
     

@@ -55,7 +55,7 @@ RUN mkdir -p /app/tmp \
 USER nodejs
 
 # 暴露端口
-EXPOSE 3000
+EXPOSE 3000 7860
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

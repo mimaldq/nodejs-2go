@@ -45,6 +45,7 @@ WORKDIR /app
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
 COPY --from=builder --chown=nodejs:nodejs /app/*.js ./
+COPY --from=builder --chown=nodejs:nodejs /app/index.html ./
 
 # 创建必要的目录并设置权限
 RUN mkdir -p /app/tmp \

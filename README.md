@@ -49,8 +49,8 @@ Telegram交流反馈群组：https://t.me/eooceu
 | FILE_PATH | 否 | ./tmp | 运行目录 |
 | SUB_PATH | 否 | sub | 订阅路径 |
 | MONITOR_KEY | 否 | - | 监控脚本密钥 |
-| SUB_PATH | 否 | - | 监控服务器标识 |
-| SUB_PATH | 否 | - | 监控上报地址 |
+| MONITOR_SERVER | 否 | - | 监控服务器标识 |
+| MONITOR_URL | 否 | - | 监控上报地址 |
 
 ## 🌐 订阅地址
 

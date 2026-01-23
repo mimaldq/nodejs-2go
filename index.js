@@ -14,7 +14,7 @@ const PROJECT_URL = process.env.PROJECT_URL || '';
 const AUTO_ACCESS = process.env.AUTO_ACCESS === 'true';
 const FILE_PATH = process.env.FILE_PATH || './tmp';
 const SUB_PATH = process.env.SUB_PATH || 'sub';
-const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;
+const PORT = process.env.SERVER_PORT || process.env.PORT || 7860;
 const UUID = process.env.UUID || '4b3e2bfe-bde1-5def-d035-0cb572bbd046';
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
 const NEZHA_PORT = process.env.NEZHA_PORT || '';

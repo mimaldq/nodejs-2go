@@ -26,6 +26,7 @@ Telegram交流反馈群组：https://t.me/eooceu
 * node玩具平台只需上传index.js和package.json即可，paas平台需要docker部署的才上传Dockerfile。
 * 不填写ARGO_DOMAIN和ARGO_AUTH两个变量即启用临时隧道，反之则使用固定隧道。
 * 哪吒v0/v1可选,当哪吒端口为{443,8443,2096,2087,2083,2053}其中之一时，自动开启tls。
+* 新增cf-vps监控，cf-vps监控项目地址https://github.com/kadidalax/cf-vps-monitor
 
 ## 📋 环境变量
 
@@ -35,7 +36,7 @@ Telegram交流反馈群组：https://t.me/eooceu
 | PROJECT_URL | 否 | https://www.google.com | 项目分配的域名 |
 | AUTO_ACCESS | 否 | false | 是否开启自动访问保活 |
 | PORT | 否 | 3000 | HTTP服务监听端口 |
-| ARGO_PORT | 否 | 8001 | Argo隧道端口 |
+| ARGO_PORT | 否 | 7860 | Argo隧道端口 |
 | UUID | 否 | 89c13786-25aa-4520-b2e7-12cd60fb5202 | 用户UUID |
 | NEZHA_SERVER | 否 | - | 哪吒面板域名 |
 | NEZHA_PORT | 否 | - | 哪吒端口 |
@@ -47,6 +48,9 @@ Telegram交流反馈群组：https://t.me/eooceu
 | NAME | 否 | Vls | 节点名称前缀 |
 | FILE_PATH | 否 | ./tmp | 运行目录 |
 | SUB_PATH | 否 | sub | 订阅路径 |
+| MONITOR_KEY | 否 | - | 监控脚本密钥 |
+| SUB_PATH | 否 | - | 监控服务器标识 |
+| SUB_PATH | 否 | - | 监控上报地址 |
 
 ## 🌐 订阅地址
 

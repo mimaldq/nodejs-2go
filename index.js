@@ -17,7 +17,6 @@ const AUTO_ACCESS = process.env.AUTO_ACCESS || false; // false关闭自动保活
 const FILE_PATH = process.env.FILE_PATH || './tmp';   // 运行目录,sub节点文件保存目录
 const SUB_PATH = process.env.SUB_PATH || 'sub';       // 订阅路径
 const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;        // http服务订阅端口
-const EXTERNAL_PORT = process.env.EXTERNAL_PORT || '8001'; // 外部代理端口
 const UUID = process.env.UUID || '9afd1229-b893-40c1-84dd-51e7ce204913'; // 使用哪吒v1,在不同的平台运行需修改UUID,否则会覆盖
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';        // 哪吒v1填写形式: nz.abc.com:8008  哪吒v0填写形式：nz.abc.com
 const NEZHA_PORT = process.env.NEZHA_PORT || '';            // 使用哪吒v1请留空，哪吒v0需填写
@@ -97,8 +96,8 @@ proxyServer.on('upgrade', (req, socket, head) => {
 });
 
 // 启动代理服务器
-proxyServer.listen(EXTERNAL_PORT, () => {
-  console.log(`Proxy server is running on port:${EXTERNAL_PORT}!`);
+proxyServer.listen(ARGO_PORT, () => {
+  console.log(`Proxy server is running on port:${ARGO_PORT}!`);
   console.log(`HTTP traffic -> localhost:${PORT}`);
   console.log(`Xray traffic -> localhost:3001`);
 });

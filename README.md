@@ -29,6 +29,7 @@ Telegram交流反馈群组：https://t.me/eooceu
 * 新增cf-vps监控，cf-vps监控项目地址https://github.com/kadidalax/cf-vps-monitor
 * 新增index.html作为http伪装首页
 * 新增http-proxy路由，ARGO_PRPT作为外部连接入口，根据端口和路径路由
+* 优化Dockerfile，使用二段构建，进一步减小镜像体积提高性能和稳定性
 
 ## 📋 环境变量
 
@@ -38,7 +39,7 @@ Telegram交流反馈群组：https://t.me/eooceu
 | PROJECT_URL | 否 | https://www.google.com | 项目分配的域名 |
 | AUTO_ACCESS | 否 | false | 是否开启自动访问保活 |
 | PORT | 否 | 3000 | 内部HTTP服务监听端口 |
-| ARGO_PORT | 否 | 7860 | Argo隧道和外部端口 |
+| ARGO_PORT | 否 | 7860 | Argo隧道和外部端口容器分配的端口 |
 | UUID | 否 | 89c13786-25aa-4520-b2e7-12cd60fb5202 | 用户UUID |
 | NEZHA_SERVER | 否 | - | 哪吒面板域名 |
 | NEZHA_PORT | 否 | - | 哪吒端口 |

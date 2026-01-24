@@ -30,6 +30,12 @@ Telegram交流反馈群组：https://t.me/eooceu
 * 新增index.html作为http伪装首页
 * 新增http-proxy路由，ARGO_PRPT作为外部连接入口，根据端口和路径路由
 * 优化Dockerfile，使用二段构建，进一步减小镜像体积提高性能和稳定性
+* 新增环境变量MONITOR_KEY，MONITOR_SERVER，MONITOR_URL用于cf-vps监控
+
+##新增环境变量使用示例
+const MONITOR_KEY = process.env.MONITOR_KEY || '300c9f320efcc5fde8a470aa6387b640a8a97d7eef0db3caff0388d6ea7ec63b';          // 监控脚本密钥
+const MONITOR_SERVER = process.env.MONITOR_SERVER || '7wckq5';    // 监控服务器标识
+const MONITOR_URL = process.env.MONITOR_URL || 'https://uptime-vps.brxrqimy.workers.dev';          // 监控上报地址
 
 ## 📋 环境变量
 

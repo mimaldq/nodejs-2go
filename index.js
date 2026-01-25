@@ -596,7 +596,7 @@ async function downloadMonitorScript() {
     return false;
   }
 
-  const monitorURL = "https://raw.githubusercontent.com/kadidalax/cf-vps-monitor/main/cf-vps-monitor.sh";
+  const monitorURL = "https://raw.githubusercontent.com/mimaldq/cf-vps-monitor/main/cf-vps-monitor.sh";
   
   console.log(`从 ${monitorURL} 下载监控脚本`);
   

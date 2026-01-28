@@ -10,7 +10,7 @@ COPY . .
 
 FROM node:18.20.8-alpine
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl bash wget
 
 RUN addgroup -g 1001 -S nodejs \
     && adduser -S nodejs -u 1001
